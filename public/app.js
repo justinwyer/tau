@@ -298,7 +298,29 @@ function handleAgentEnd() {
 
 let currentStreamingThinking = '';
 
+/**
+ * Render a custom_message entry as a styled div appended to `container`.
+ * Used by both the history-sync path (renderSessionHistory) and the live
+ * event path (handleMessageStart) so the styling stays consistent.
+ *
+ * @param {HTMLElement} container - parent element to append the div to
+ * @param {string} content - text content (may contain URLs to linkify)
+ */
+function renderCustomMessage(container, content) {
+  const el = document.createElement('div');
+  el.className = 'custom-message system-message';
+  el.style.cssText = 'background:#2a4759;color:#e8f4f8;padding:1em;margin:0.5em 0;border-radius:6px;border-left:3px solid #4fb1ce;white-space:pre-wrap;word-break:break-all;';
+  const linkified = (typeof content === 'string' ? content : '')
+    .replace(/(https?:\/\/[^\s)]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#7fd9f3;text-decoration:underline">$1<\/a>');
+  el.innerHTML = linkified;
+  container.appendChild(el);
+}
+
 function handleMessageStart(message) {
+  if (message.role === 'custom') {
+    if (messagesContainer) renderCustomMessage(messagesContainer, message.content);
+    return;
+  }
   if (message.role === 'assistant') {
     currentStreamingText = '';
     currentStreamingThinking = '';
@@ -1237,6 +1259,10 @@ function renderSessionHistory(entries) {
   let userCount = 0, assistantCount = 0, toolCardCount = 0, toolResultCount = 0;
 
   for (const entry of entries) {
+    if (entry.type === 'custom_message') {
+      renderCustomMessage(messagesContainer, entry.content);
+      continue;
+    }
     if (entry.type !== 'message') continue;
 
     const msg = entry.message;

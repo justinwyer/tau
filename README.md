@@ -1,5 +1,22 @@
 # Tau
 
+> **This is the `justinwyer/tau` fork** (`feat/wave-workbench` branch).
+> It adds the following changes on top of upstream [`deflating/tau`](https://github.com/deflating/tau):
+>
+> - **wss:// for multi-instance session redirect** — the upstream commit `c7cf3ac` made
+>   the initial WebSocket URL protocol-relative; this fork extends the fix to the
+>   multi-instance redirect path (line ~1107 in `public/app.js`) so HTTPS deployments
+>   don't downgrade to `ws://` when switching instances.
+> - **`custom_message` rendering in session history** — `renderSessionHistory` now
+>   handles `entry.type === 'custom_message'` entries (e.g. OAuth auth-URL links from
+>   `pi.sendMessage`) as styled, linkified divs so they appear on page load / history sync.
+> - **Live `custom_message` rendering** — `handleMessageStart` now handles
+>   `message.role === 'custom'` (fired by `pi.sendMessage` while the browser is connected)
+>   so auth-URL links appear immediately without requiring a page reload.
+>
+> Both render paths share a `renderCustomMessage(container, content)` helper so
+> the styling (dark-blue card, linkified URLs) is consistent.
+
 A web UI that mirrors your [Pi](https://github.com/badlogic/pi-mono) terminal session in the browser. No separate server — it runs as a Pi extension inside your existing process.
 
 ![Tau dark mode](docs/images/dark.png)
