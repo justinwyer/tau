@@ -1104,7 +1104,7 @@ async function switchSession(sessionFile, session = null, project = null) {
       const otherInstance = liveInstances.find(i => i.sessionFile === sessionFile && i.port !== new URL(wsClient.url).port * 1);
       if (otherInstance) {
         // Reconnect to the other instance
-        const newUrl = `ws://${location.hostname}:${otherInstance.port}/ws`;
+        const newUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${otherInstance.port}/ws`;
         console.log(`[App] Switching to instance on port ${otherInstance.port}`);
         wsClient.disconnect();
         wsClient.url = newUrl;
