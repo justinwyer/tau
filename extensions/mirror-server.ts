@@ -500,6 +500,34 @@ export default function (pi: ExtensionAPI) {
       switch (command.type) {
         // ─── Prompting ───
         case "prompt": {
+          const promptText = command.message?.trim?.() ?? "";
+
+          // Slash-command routing: if the message starts with "/", try to
+          // dispatch it to a registered pi command handler before falling back
+          // to sendUserMessage. pi.runCommand returns true on match+execute.
+          //
+          // Feature-detect: pi.runCommand is available in pi >= 0.74.x once
+          // the upstream PR (earendil-works/pi-mono:feat/run-command) merges,
+          // or when patch-pi.py has been applied locally. Graceful degradation:
+          // if the method is absent or returns false, fall through to the
+          // existing sendUserMessage path (broken-but-not-crashing behaviour).
+          //
+          // TODO: remove `as any` cast once upstream PR merges and the type is
+          // available in @earendil-works/pi-coding-agent.
+          if (
+            promptText.startsWith("/") &&
+            typeof (pi as any).runCommand === "function" &&
+            ctx?.isIdle()
+          ) {
+            const handled = await (pi as any).runCommand(promptText);
+            if (handled) {
+              sendTo(ws, success("prompt"));
+              break;
+            }
+            // runCommand returned false (no matching command) — fall through
+            // to sendUserMessage so the LLM still sees the slash text.
+          }
+
           if (ctx && !ctx.isIdle()) {
             const behavior = command.streamingBehavior || "steer";
             if (behavior === "steer") {
