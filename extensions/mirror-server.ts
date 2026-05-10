@@ -281,21 +281,25 @@ export default function (pi: ExtensionAPI) {
   // ═══════════════════════════════════════
   // Helper: stop the server
   // ═══════════════════════════════════════
-  function stopServer() {
+  async function stopServer(): Promise<void> {
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
     }
     if (wss) {
+      // terminate() forces immediate socket destruction — browser's onclose
+      // fires synchronously rather than after a TCP close-handshake round-trip.
+      // This is what makes the WS reconnect + set_wave_user_token re-handshake
+      // arrive before the user's next click.
       for (const client of clients) {
-        client.close();
+        try { client.terminate(); } catch {}
       }
       clients.clear();
-      wss.close();
+      await new Promise<void>((resolve) => wss!.close(() => resolve()));
       wss = null;
     }
     if (server) {
-      server.close();
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
       server = null;
     }
     unregisterInstance();
@@ -313,7 +317,7 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("Tau is not running", "warning");
         return;
       }
-      stopServer();
+      await stopServer();
       ctx.ui.setStatus("mirror", "");
       ctx.ui.notify("Tau mirror server stopped", "info");
       console.log("[Mirror] Server stopped via /taustop");
@@ -1615,6 +1619,12 @@ img{border-radius:12px}a{color:#b87a5c;font-size:18px;margin-top:16px}p{color:rg
         (ws as any).isAlive = true;
       });
 
+      // Ask the browser to re-push its Wave user token immediately.
+      // Idempotent: browser reads localStorage and sends set_wave_user_token
+      // regardless of whether the token has changed. This recovers module-level
+      // state (waveUserToken) that was reset by jiti re-evaluation on reload.
+      sendTo(ws, { type: "request_wave_user_token" });
+
       // Send initial state
       sendTo(ws, { type: "state", isStreaming: false, mode: "mirror" });
 
@@ -1754,7 +1764,7 @@ img{border-radius:12px}a{color:#b87a5c;font-size:18px;margin-top:16px}p{color:rg
   // Cleanup on shutdown
   // ═══════════════════════════════════════
   pi.on("session_shutdown", async () => {
-    stopServer();
+    await stopServer();
     console.log("[Mirror] Server shut down");
   });
 }

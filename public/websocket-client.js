@@ -144,6 +144,11 @@ export class WebSocketClient extends EventTarget {
       case 'mirror_sync':
         this.dispatchEvent(new CustomEvent('mirrorSync', { detail: message }));
         break;
+      case 'request_wave_user_token':
+        // Server is asking us to re-push the token (e.g. after a pi reload
+        // reset module-level state). Re-read from localStorage and send.
+        this._sendWaveUserToken();
+        break;
       default:
         console.warn('[WS] Unknown message type:', message.type);
     }
