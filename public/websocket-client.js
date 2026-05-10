@@ -38,6 +38,10 @@ export class WebSocketClient extends EventTarget {
       this.reconnectAttempts = 0;
       this.connectionState = 'open';
       this.dispatchEvent(new CustomEvent('connected'));
+      // Send the Wave user token (if present) so the server can enrich
+      // /connect-wave slash commands with Authorization headers.
+      // Never logged on either side; null clears any previously held token.
+      this._sendWaveUserToken();
     };
 
     this.ws.onmessage = (event) => {
@@ -140,4 +144,25 @@ export class WebSocketClient extends EventTarget {
         console.warn('[WS] Unknown message type:', message.type);
     }
   }
+
+  /**
+   * Send the Wave user token to the server. Called on connect and whenever
+   * localStorage['waveUserToken'] changes. Token is never logged.
+   */
+  _sendWaveUserToken() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'set_wave_user_token',
+        token: localStorage.getItem('waveUserToken') || null,
+      }));
+    }
+  }
 }
+
+// Subscribe to cross-tab localStorage changes. Fires when waveUserToken is
+// updated (e.g. after login/logout in another Wave tab).
+window.addEventListener('storage', (event) => {
+  if (event.key === 'waveUserToken' && window._tauWsClient) {
+    window._tauWsClient._sendWaveUserToken();
+  }
+});

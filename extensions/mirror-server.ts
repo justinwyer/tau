@@ -44,8 +44,40 @@ const AUTH_USER = TAU_SETTINGS.user;
 const AUTH_PASS = TAU_SETTINGS.pass;
 const AUTH_CONFIGURED = !!(AUTH_USER && AUTH_PASS);
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
+
+// Wave user token received from the browser via set_wave_user_token. Used to
+// enrich /connect-wave slash commands with an Authorization header so skills
+// fetches succeed against a Wave deployment that requires auth. Never logged.
+let waveUserToken: string | null = null;
 // @ts-ignore — __dirname is provided by jiti at runtime
 const STATIC_DIR = process.env.TAU_STATIC_DIR || findPublicDir();
+
+// Base path — set TAU_BASE_PATH to serve tau under a sub-path (e.g. "/workbench").
+// Default "" means serve at root (today's behaviour). No trailing slash.
+const BASE_PATH: string = (() => {
+  const bp = (process.env["TAU_BASE_PATH"] ?? "").trimEnd();
+  if (bp.endsWith("/")) {
+    console.warn("[mirror-server] TAU_BASE_PATH should not end with '/'; trimming trailing slash.");
+    return bp.replace(/\/+$/, "");
+  }
+  return bp;
+})();
+
+/**
+ * Strip the base path prefix from a request URL.
+ * Returns the path-relative URL (with query string preserved) if it starts
+ * with BASE_PATH, or null if it doesn't (caller should 404).
+ * When BASE_PATH is empty, passes through unchanged.
+ */
+function stripBasePath(url: string): string | null {
+  if (BASE_PATH === "") return url;
+  const qIdx = url.indexOf("?");
+  const pathPart = qIdx === -1 ? url : url.slice(0, qIdx);
+  const query = qIdx === -1 ? "" : url.slice(qIdx);
+  if (pathPart === BASE_PATH) return "/" + query;
+  if (pathPart.startsWith(BASE_PATH + "/")) return pathPart.slice(BASE_PATH.length) + query;
+  return null;
+}
 
 function findPublicDir(): string {
     const candidates: string[] = [];
@@ -509,13 +541,25 @@ export default function (pi: ExtensionAPI) {
           // Guards: must start with '/', must have TMUX_PANE, must be idle.
           // Fallback: if tmux is absent, errors, or any guard fails, fall
           // through to the existing sendUserMessage path.
+          // Token enrichment: if the command is /connect-wave and we have a
+          // Wave user token from the browser, append --token=<jwt> unless the
+          // user already supplied one. The token is never logged.
+          let augmentedText = promptText;
+          if (
+            /^\/connect-wave(\s|$)/.test(promptText) &&
+            waveUserToken &&
+            !/--token=/.test(promptText)
+          ) {
+            augmentedText = `${promptText} --token=${waveUserToken}`;
+          }
+
           const tmuxPane = process.env["TMUX_PANE"];
           if (promptText.startsWith("/") && tmuxPane && ctx?.isIdle()) {
             try {
               const { execFileSync } = require("node:child_process");
               // -l = literal mode: no key-name interpretation by tmux.
-              // Send the text and Enter as separate calls.
-              execFileSync("tmux", ["send-keys", "-t", tmuxPane, "-l", promptText]);
+              // Send the augmented text and Enter as separate calls.
+              execFileSync("tmux", ["send-keys", "-t", tmuxPane, "-l", augmentedText]);
               execFileSync("tmux", ["send-keys", "-t", tmuxPane, "Enter"]);
               sendTo(ws, success("prompt"));
               break;
@@ -810,6 +854,17 @@ export default function (pi: ExtensionAPI) {
           break;
         }
 
+        // ─── Wave token bridge ───
+        case "set_wave_user_token": {
+          // Receive the Wave user JWT from the browser. Stored in memory only;
+          // never echoed back or logged. Used to enrich /connect-wave commands.
+          waveUserToken = (
+            typeof command.token === "string" && command.token.length > 0
+          ) ? command.token : null;
+          sendTo(ws, success("set_wave_user_token"));
+          break;
+        }
+
         default: {
           sendTo(ws, error(command.type, `Unknown command: ${command.type}`));
         }
@@ -823,7 +878,16 @@ export default function (pi: ExtensionAPI) {
   // Static file server
   // ═══════════════════════════════════════
   function serveStaticFile(req: http.IncomingMessage, res: http.ServerResponse) {
-    let urlPath = req.url || "/";
+    const rawUrl = req.url || "/";
+
+    // Strip base path prefix; 404 for requests that don't match.
+    const stripped = stripBasePath(rawUrl);
+    if (stripped === null) {
+      res.writeHead(404);
+      res.end("Not Found");
+      return;
+    }
+    let urlPath = stripped;
 
     // Auth gate — exempt /api/health for monitoring
     if (authEnabled && urlPath !== "/api/health" && !checkBasicAuth(req)) {
@@ -862,6 +926,25 @@ export default function (pi: ExtensionAPI) {
 
       const ext = path.extname(filePath).toLowerCase();
       const contentType = MIME_TYPES[ext] || "application/octet-stream";
+
+      // Inject window.TAU_BASE_PATH into index.html so the frontend JS knows
+      // the base path for constructing API and WebSocket URLs.
+      if (urlPath === "/index.html") {
+        fs.readFile(filePath, "utf8", (readErr, html) => {
+          if (readErr) {
+            res.writeHead(500);
+            res.end("Internal Server Error");
+            return;
+          }
+          const injected = html.replace(
+            "<head>",
+            `<head>\n  <script>window.TAU_BASE_PATH = ${JSON.stringify(BASE_PATH)};</script>`
+          );
+          res.writeHead(200, { "Content-Type": "text/html" });
+          res.end(injected);
+        });
+        return;
+      }
 
       res.writeHead(200, { "Content-Type": contentType });
       fs.createReadStream(filePath).pipe(res);
@@ -965,7 +1048,7 @@ img{border-radius:12px}a{color:#b87a5c;font-size:18px;margin-top:16px}p{color:rg
 
     // Full-text search across sessions
     if (urlPath.startsWith("/api/search") && req.method === "GET") {
-      const searchUrl = new URL(`http://localhost${req.url}`);
+      const searchUrl = new URL(`http://localhost${urlPath}`);
       const q = searchUrl.searchParams.get("q") || "";
       serveSearch(res, q);
       return;
@@ -975,7 +1058,7 @@ img{border-radius:12px}a{color:#b87a5c;font-size:18px;margin-top:16px}p{color:rg
     if (urlPath === "/api/files" || urlPath.startsWith("/api/files?")) {
       if (req.method !== "GET") { res.writeHead(405); res.end(); return; }
       try {
-        const filesUrl = new URL(`http://localhost${req.url}`);
+        const filesUrl = new URL(`http://localhost${urlPath}`);
         const explicitPath = filesUrl.searchParams.get("path");
         let dirPath = explicitPath || process.cwd();
         if (!explicitPath && latestCtx) {
@@ -1496,7 +1579,9 @@ img{border-radius:12px}a{color:#b87a5c;font-size:18px;margin-top:16px}p{color:rg
         socket.destroy();
         return;
       }
-      if (request.url === "/ws") {
+      // Strip base path before matching the /ws upgrade URL.
+      const upgradeStripped = stripBasePath(request.url || "/");
+      if (upgradeStripped === "/ws") {
         wss!.handleUpgrade(request, socket, head, (ws) => {
           wss!.emit("connection", ws, request);
         });

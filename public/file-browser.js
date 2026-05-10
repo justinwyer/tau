@@ -1,3 +1,5 @@
+import { api } from './base-path.js';
+
 /**
  * File Browser — right sidebar file tree with drag-and-drop
  */
@@ -135,7 +137,7 @@ export class FileBrowser {
 
   async openNatively(filePath) {
     try {
-      await fetch('/api/open', {
+      await fetch(api('/api/open'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath }),

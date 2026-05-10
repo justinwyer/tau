@@ -11,11 +11,14 @@ import { SessionSidebar } from './session-sidebar.js';
 import { themes, applyTheme, getCurrentTheme } from './themes.js';
 import { FileBrowser } from './file-browser.js';
 import { Launcher } from './launcher.js';
+import { BASE, api } from './base-path.js';
 
 
 // Initialize components
-const wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
+const wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + BASE + '/ws';
 const wsClient = new WebSocketClient(wsUrl);
+// Expose for cross-module access (e.g. storage event listener in websocket-client.js).
+window._tauWsClient = wsClient;
 const state = new StateManager();
 const messageRenderer = new MessageRenderer(document.getElementById('messages'));
 const toolCardRenderer = new ToolCardRenderer(document.getElementById('messages'));
@@ -95,7 +98,7 @@ fileSidebarUp.addEventListener('click', () => {
 
 document.getElementById('file-sidebar-finder').addEventListener('click', () => {
   if (fileBrowser.currentPath) {
-    fetch('/api/open', {
+    fetch(api('/api/open'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filePath: fileBrowser.currentPath }),
@@ -745,7 +748,7 @@ commandPaletteOverlay.addEventListener('click', closeCommandPalette);
 async function rpcCommand(cmd, statusMsg) {
   try {
     if (statusMsg) statusText.textContent = statusMsg;
-    const resp = await fetch('/api/rpc', {
+    const resp = await fetch(api('/api/rpc'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cmd),
@@ -809,8 +812,8 @@ let currentThinkingLevel = 'off';
 async function fetchModelInfo() {
   try {
     const [modelsResp, stateResp] = await Promise.all([
-      fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'get_available_models' }) }),
-      fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'get_state' }) }),
+      fetch(api('/api/rpc'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'get_available_models' }) }),
+      fetch(api('/api/rpc'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'get_state' }) }),
     ]);
     const modelsData = await modelsResp.json();
     const stateData = await stateResp.json();
@@ -1103,7 +1106,7 @@ async function switchSession(sessionFile, session = null, project = null) {
 
       if (dirName && file) {
         try {
-          const res = await fetch(`/api/sessions/${dirName}/${file}`);
+          const res = await fetch(api(`/api/sessions/${dirName}/${file}`));
           console.log('[App] History fetch status:', res.status);
           const data = await res.json();
           console.log('[App] History entries:', data.entries?.length || 0);
@@ -1126,7 +1129,7 @@ async function switchSession(sessionFile, session = null, project = null) {
       const otherInstance = liveInstances.find(i => i.sessionFile === sessionFile && i.port !== new URL(wsClient.url).port * 1);
       if (otherInstance) {
         // Reconnect to the other instance
-        const newUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${otherInstance.port}/ws`;
+        const newUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${otherInstance.port}${BASE}/ws`;
         console.log(`[App] Switching to instance on port ${otherInstance.port}`);
         wsClient.disconnect();
         wsClient.url = newUrl;
@@ -1146,7 +1149,7 @@ async function switchSession(sessionFile, session = null, project = null) {
         wsClient.send({ type: 'mirror_sync_request' });
       }
     } else {
-      const res = await fetch('/api/sessions/switch', {
+      const res = await fetch(api('/api/sessions/switch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionFile }),
@@ -1221,7 +1224,7 @@ function updateMirrorLiveIndicator() {
 // Poll for running instances to mark all live sessions
 async function pollInstances() {
   try {
-    const res = await fetch('/api/instances');
+    const res = await fetch(api('/api/instances'));
     if (res.ok) {
       const data = await res.json();
       liveInstances = data.instances || [];
@@ -1439,7 +1442,7 @@ function updateConnectionStatus(status) {
     statusText.title = tailscaleUrl || '';
     // Fetch tailscale info on first connect
     if (!tailscaleUrl) {
-      fetch('/api/health').then(r => r.json()).then(data => {
+      fetch(api('/api/health')).then(r => r.json()).then(data => {
         if (data.tailscaleUrl) {
           tailscaleUrl = data.tailscaleUrl;
           statusText.textContent = 'Connected • TS';
@@ -1531,7 +1534,7 @@ async function openSettings() {
 
   // Fetch current state for toggles
   try {
-    const resp = await fetch('/api/rpc', {
+    const resp = await fetch(api('/api/rpc'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'get_state' }),
@@ -1825,7 +1828,7 @@ if (isMobile()) {
 const launcherEl = document.getElementById('launcher');
 const launcher = new Launcher(launcherEl, async (projectPath) => {
   try {
-    const res = await fetch('/api/projects/launch', {
+    const res = await fetch(api('/api/projects/launch'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: projectPath }),
@@ -1843,7 +1846,7 @@ const launcher = new Launcher(launcherEl, async (projectPath) => {
 // Check if launcher should show (projects configured)
 async function initLauncher() {
   try {
-    const res = await fetch('/api/projects');
+    const res = await fetch(api('/api/projects'));
     const data = await res.json();
     if (data.projects && data.projects.length > 0) {
       launcher.projects = data.projects;

@@ -1,3 +1,5 @@
+import { api } from './base-path.js';
+
 /**
  * Session Sidebar - Lists sessions grouped by project, handles switching
  */
@@ -45,7 +47,7 @@ export class SessionSidebar {
       this.container.innerHTML = Array.from({length: 6}, () =>
         '<div class="session-skeleton"><div class="session-skeleton-title"></div><div class="session-skeleton-meta"></div></div>'
       ).join('');
-      const res = await fetch('/api/sessions');
+      const res = await fetch(api('/api/sessions'));
       const data = await res.json();
       this.projects = data.projects || [];
       this.render();
@@ -81,7 +83,7 @@ export class SessionSidebar {
     if (query !== this.searchQuery) return;
 
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch(api(`/api/search?q=${encodeURIComponent(query)}`));
       const data = await res.json();
       if (query !== this.searchQuery) return; // stale
 
@@ -275,7 +277,7 @@ export class SessionSidebar {
       const newName = input.value.trim();
       if (newName && newName !== currentName) {
         try {
-          await fetch('/api/rpc', {
+          await fetch(api('/api/rpc'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: 'set_session_name', name: newName }),
@@ -298,7 +300,7 @@ export class SessionSidebar {
 
   async exportSession(session) {
     try {
-      const data = await (await fetch('/api/rpc', {
+      const data = await (await fetch(api('/api/rpc'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'export_html' }),
