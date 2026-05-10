@@ -2743,6 +2743,12 @@ body.hide-thinking .thinking-block { display: none !important; }
   transform: scale(0.98);
 }
 
+.command-separator {
+  height: 1px;
+  background: var(--border-subtle, rgba(255,255,255,0.08));
+  margin: 4px 0;
+}
+
 .command-icon {
   width: 28px;
   height: 28px;

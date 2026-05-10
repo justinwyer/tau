@@ -707,6 +707,17 @@ const commandPaletteOverlay = document.getElementById('command-palette-overlay')
 const commandList = document.getElementById('command-list');
 
 const commands = [
+  // Wave commands — server-side enrichment fills URL (from waveOrigin) and
+  // Authorization token (from waveUserToken) before tmux send-keys dispatch.
+  { icon: '🔌', label: 'Connect to this Wave', desc: 'Pull skills from this Wave deepwater app store',
+    action: () => wsClient.send({ type: 'prompt', message: '/connect-wave' }) },
+  { icon: '🚀', label: 'Publish to Wave', desc: 'Push current draft to the Wave app store',
+    action: () => prefillInput('/publish-to-wave ') },
+  { icon: '👁️', label: 'Preview App', desc: 'Open the current app in a Wave preview',
+    action: () => prefillInput('/preview-app ') },
+  { _separator: true },
+
+  // Builtins
   { icon: '🗜️', label: 'Compact', desc: 'Compact context to save tokens', action: () => rpcCommand({ type: 'compact' }, 'Compacting...') },
   { icon: '📋', label: 'Export HTML', desc: 'Export session as HTML file', action: () => rpcExportHtml() },
   { icon: '📊', label: 'Session Stats', desc: 'Show session statistics', action: () => showSessionStats() },
@@ -715,9 +726,25 @@ const commands = [
 
 ];
 
+// Prefill the message input with text and move focus+cursor to the end.
+// Used by palette commands that need user review before sending.
+function prefillInput(text) {
+  if (!messageInput) return;
+  messageInput.value = text;
+  messageInput.focus();
+  messageInput.selectionStart = messageInput.selectionEnd = text.length;
+  messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function openCommandPalette() {
   commandList.innerHTML = '';
   commands.forEach(cmd => {
+    if (cmd._separator) {
+      const sep = document.createElement('div');
+      sep.className = 'command-separator';
+      commandList.appendChild(sep);
+      return;
+    }
     const el = document.createElement('div');
     el.className = 'command-item';
     el.innerHTML = `
