@@ -13,9 +13,14 @@
 > - **Live `custom_message` rendering** — `handleMessageStart` now handles
 >   `message.role === 'custom'` (fired by `pi.sendMessage` while the browser is connected)
 >   so auth-URL links appear immediately without requiring a page reload.
+> - **Slash-command routing via tmux send-keys** — when a browser `prompt` message
+>   starts with `/` and pi is running inside a tmux pane (`TMUX_PANE` is set) and the
+>   agent is idle, the command is delivered to pi's TUI via `tmux send-keys -l`. Pi's
+>   own input parser handles `/commands` natively. If tmux is unavailable or the guards
+>   fail, the message falls through to the existing `sendUserMessage` path.
 >
-> Both render paths share a `renderCustomMessage(container, content)` helper so
-> the styling (dark-blue card, linkified URLs) is consistent.
+> Both `custom_message` render paths share a `renderCustomMessage(container, content)`
+> helper so the styling (dark-blue card, linkified URLs) is consistent.
 
 A web UI that mirrors your [Pi](https://github.com/badlogic/pi-mono) terminal session in the browser. No separate server — it runs as a Pi extension inside your existing process.
 

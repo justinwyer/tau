@@ -502,30 +502,27 @@ export default function (pi: ExtensionAPI) {
         case "prompt": {
           const promptText = command.message?.trim?.() ?? "";
 
-          // Slash-command routing: if the message starts with "/", try to
-          // dispatch it to a registered pi command handler before falling back
-          // to sendUserMessage. pi.runCommand returns true on match+execute.
+          // Slash-command routing: drive pi's TUI input directly via tmux
+          // send-keys when running in a tmux pane. Pi's TUI input parser
+          // handles /commands natively, so no pi-API changes are needed.
           //
-          // Feature-detect: pi.runCommand is available in pi >= 0.74.x once
-          // the upstream PR (earendil-works/pi-mono:feat/run-command) merges,
-          // or when patch-pi.py has been applied locally. Graceful degradation:
-          // if the method is absent or returns false, fall through to the
-          // existing sendUserMessage path (broken-but-not-crashing behaviour).
-          //
-          // TODO: remove `as any` cast once upstream PR merges and the type is
-          // available in @earendil-works/pi-coding-agent.
-          if (
-            promptText.startsWith("/") &&
-            typeof (pi as any).runCommand === "function" &&
-            ctx?.isIdle()
-          ) {
-            const handled = await (pi as any).runCommand(promptText);
-            if (handled) {
+          // Guards: must start with '/', must have TMUX_PANE, must be idle.
+          // Fallback: if tmux is absent, errors, or any guard fails, fall
+          // through to the existing sendUserMessage path.
+          const tmuxPane = process.env["TMUX_PANE"];
+          if (promptText.startsWith("/") && tmuxPane && ctx?.isIdle()) {
+            try {
+              const { execFileSync } = require("node:child_process");
+              // -l = literal mode: no key-name interpretation by tmux.
+              // Send the text and Enter as separate calls.
+              execFileSync("tmux", ["send-keys", "-t", tmuxPane, "-l", promptText]);
+              execFileSync("tmux", ["send-keys", "-t", tmuxPane, "Enter"]);
               sendTo(ws, success("prompt"));
               break;
+            } catch (err) {
+              console.error("[mirror-server] tmux send-keys failed:", err);
+              // fall through to sendUserMessage on tmux failure
             }
-            // runCommand returned false (no matching command) — fall through
-            // to sendUserMessage so the LLM still sees the slash text.
           }
 
           if (ctx && !ctx.isIdle()) {
