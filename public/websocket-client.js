@@ -42,6 +42,10 @@ export class WebSocketClient extends EventTarget {
       // /connect-wave slash commands with Authorization headers.
       // Never logged on either side; null clears any previously held token.
       this._sendWaveUserToken();
+      // Send the Wave origin (location.origin) so the server can auto-fill
+      // the URL argument on bare /connect-wave commands. Sent once on connect;
+      // origin doesn't change during a session.
+      this.ws.send(JSON.stringify({ type: 'set_wave_origin', origin: location.origin }));
     };
 
     this.ws.onmessage = (event) => {

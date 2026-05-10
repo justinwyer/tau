@@ -49,6 +49,10 @@ let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 // enrich /connect-wave slash commands with an Authorization header so skills
 // fetches succeed against a Wave deployment that requires auth. Never logged.
 let waveUserToken: string | null = null;
+
+// Wave origin received from the browser via set_wave_origin (location.origin).
+// Used to auto-fill the URL argument on bare /connect-wave commands.
+let waveOrigin: string | null = null;
 // @ts-ignore — __dirname is provided by jiti at runtime
 const STATIC_DIR = process.env.TAU_STATIC_DIR || findPublicDir();
 
@@ -541,16 +545,20 @@ export default function (pi: ExtensionAPI) {
           // Guards: must start with '/', must have TMUX_PANE, must be idle.
           // Fallback: if tmux is absent, errors, or any guard fails, fall
           // through to the existing sendUserMessage path.
-          // Token enrichment: if the command is /connect-wave and we have a
-          // Wave user token from the browser, append --token=<jwt> unless the
-          // user already supplied one. The token is never logged.
+          // URL + token enrichment for /connect-wave:
+          //   1. Auto-fill URL from waveOrigin when user supplied none (bare command).
+          //   2. Auto-fill --token from waveUserToken unless already present.
+          // Order matters: URL fill happens first so the token guard checks the
+          // post-fill string. Token is never logged.
           let augmentedText = promptText;
-          if (
-            /^\/connect-wave(\s|$)/.test(promptText) &&
-            waveUserToken &&
-            !/--token=/.test(promptText)
-          ) {
-            augmentedText = `${promptText} --token=${waveUserToken}`;
+          if (/^\/connect-wave(\s|$)/.test(promptText)) {
+            const hasUrl = /^\/connect-wave\s+\S/.test(promptText);
+            if (!hasUrl && waveOrigin) {
+              augmentedText = `/connect-wave ${waveOrigin}`;
+            }
+            if (waveUserToken && !/--token=/.test(augmentedText)) {
+              augmentedText = `${augmentedText} --token=${waveUserToken}`;
+            }
           }
 
           const tmuxPane = process.env["TMUX_PANE"];
@@ -854,7 +862,15 @@ export default function (pi: ExtensionAPI) {
           break;
         }
 
-        // ─── Wave token bridge ───
+        // ─── Wave token/origin bridge ───
+        case "set_wave_origin": {
+          waveOrigin = (
+            typeof command.origin === "string" && command.origin.length > 0
+          ) ? command.origin : null;
+          sendTo(ws, success("set_wave_origin"));
+          break;
+        }
+
         case "set_wave_user_token": {
           // Receive the Wave user JWT from the browser. Stored in memory only;
           // never echoed back or logged. Used to enrich /connect-wave commands.
